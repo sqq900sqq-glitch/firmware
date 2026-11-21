@@ -48,7 +48,17 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private var jumpCenter: CGPoint { CGPoint(x: size.width / 2 - 90, y: -size.height / 2 + 64) }
 
     private var moveLeft: Bool { touchRoles.values.contains(.left) }
-    private var moveRight: Bool { touchRoles.values.contains(.right) }
+    private var moveRight: Bool {
+        #if DEBUG
+        if AutoTest.enabled && botRight { return true }
+        #endif
+        return touchRoles.values.contains(.right)
+    }
+
+    #if DEBUG
+    private var botRight = false
+    private var lastLog: TimeInterval = 0
+    #endif
 
     // MARK: Setup
     override func didMove(to view: SKView) {
@@ -377,6 +387,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: Loop
     override func update(_ currentTime: TimeInterval) {
         now = currentTime
+        #if DEBUG
+        if AutoTest.enabled { botStep(currentTime) }
+        #endif
         guard !isDone else { return }
 
         if isGrounded(), (player.physicsBody?.velocity.dy ?? 0) <= 50 {
@@ -446,6 +459,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         switch other.categoryBitMask {
         case Cat.coin:
+            #if DEBUG
+            AutoTest.coins += 1
+            #endif
             node.removeFromParent()
             coinsCollected += 1
             updateScore()
@@ -462,6 +478,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         guard !e.dead else { return }
         let feet = player.position.y - player.size.height / 2
         if feet > e.position.y - 2 {
+            #if DEBUG
+            AutoTest.log("STOMP enemy at x=\(Int(e.position.x)) feet=\(Int(feet)) enemyY=\(Int(e.position.y))")
+            #endif
             e.dead = true
             e.physicsBody?.categoryBitMask = 0
             e.physicsBody?.collisionBitMask = 0
@@ -478,6 +497,10 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func die() {
         guard !isDone else { return }
+        #if DEBUG
+        AutoTest.deaths += 1
+        AutoTest.log("DEATH #\(AutoTest.deaths) at x=\(Int(player.position.x)) y=\(Int(player.position.y)) cause=\(player.position.y < -80 ? "pit" : "enemy")")
+        #endif
         isDone = true
         touchRoles.removeAll()
         player.physicsBody?.collisionBitMask = 0
@@ -489,6 +512,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func win() {
         guard !isDone else { return }
+        #if DEBUG
+        AutoTest.log("WIN coins=\(coinsCollected)/\(totalCoins) deaths=\(AutoTest.deaths) t=\(String(format: "%.1f", AutoTest.elapsed))")
+        #endif
         isDone = true
         touchRoles.removeAll()
         player.physicsBody?.velocity = .zero
@@ -507,3 +533,63 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         view?.presentScene(s, transition: .fade(withDuration: 0.4))
     }
 }
+
+#if DEBUG
+// Automated play-test used by CI (launch argument -autotest). Not compiled into Release builds.
+enum AutoTest {
+    static let enabled = ProcessInfo.processInfo.arguments.contains("-autotest")
+    static let start = Date()
+    static var deaths = 0
+    static var coins = 0
+    static var finished = false
+    static var elapsed: TimeInterval { Date().timeIntervalSince(start) }
+
+    static func log(_ s: String) {
+        print("[AT] " + String(format: "%6.2f ", elapsed) + s)
+        fflush(stdout)
+    }
+
+    static func finish(_ reason: String) {
+        guard !finished else { return }
+        finished = true
+        log("END \(reason) deaths=\(deaths) coinsTouched=\(coins)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exit(0) }
+    }
+}
+
+extension GameScene {
+    fileprivate func botStep(_ t: TimeInterval) {
+        if AutoTest.elapsed > 150 { AutoTest.finish("TIMEOUT x=\(Int(player.position.x))"); return }
+        if isDone {
+            if canRestart { AutoTest.finish("WON") }
+            return
+        }
+        // Give the scene 2 s to settle before moving.
+        guard AutoTest.elapsed > 2 else { logState(t); return }
+        botRight = true
+
+        let grounded = isGrounded()
+        let px = player.position.x
+        let footY = player.position.y - player.size.height / 2
+        let pitAhead = !rayHitsGround(from: CGPoint(x: px + 40, y: footY + 2),
+                                      to: CGPoint(x: px + 40, y: footY - 40))
+        let enemyAhead = enemies.contains { e in
+            !e.dead && e.parent != nil && e.position.x > px && e.position.x - px < 110
+                && abs(e.position.y - player.position.y) < 40
+        }
+        let blocked = abs(player.physicsBody?.velocity.dx ?? 0) < 20
+        if grounded && (pitAhead || enemyAhead || blocked) {
+            AutoTest.log("BOT jump x=\(Int(px)) pit=\(pitAhead) enemy=\(enemyAhead) blocked=\(blocked)")
+            jump()
+        }
+        logState(t)
+    }
+
+    fileprivate func logState(_ t: TimeInterval) {
+        guard t - lastLog >= 0.5 else { return }
+        lastLog = t
+        let v = player.physicsBody?.velocity ?? .zero
+        AutoTest.log("STATE x=\(Int(player.position.x)) y=\(Int(player.position.y)) vx=\(Int(v.dx)) vy=\(Int(v.dy)) grounded=\(isGrounded()) coins=\(coinsCollected)/\(totalCoins) cam=\(Int(cam.position.x)) scene=\(Int(size.width))x\(Int(size.height))")
+    }
+}
+#endif
