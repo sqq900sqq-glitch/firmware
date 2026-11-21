@@ -431,7 +431,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         let off = player.size.width / 2 - 4
         for dx in [-off, off] {
             let x = player.position.x + dx
-            if rayHitsGround(from: CGPoint(x: x, y: y0 - 1), to: CGPoint(x: x, y: y0 - 5)) {
+            // Start the ray just above the feet: a ray that starts inside the ground body never reports it.
+            if rayHitsGround(from: CGPoint(x: x, y: y0 + 2), to: CGPoint(x: x, y: y0 - 5)) {
                 return true
             }
         }
