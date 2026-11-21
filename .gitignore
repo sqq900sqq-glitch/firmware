@@ -14,3 +14,14 @@ include/current_year.h
 checksum.sha256
 /*.bin
 .vscode/extensions.json
+
+# iOS build outputs
+ios/Bruce.xcodeproj/
+ios/build/
+ios/Payload/
+ios/*.ipa
+sqqbasra/Sqqbasra.xcodeproj/
+sqqbasra/build/
+sqqbasra/Payload/
+sqqbasra/*.ipa
+sqqbasra/Sources/Info.plist

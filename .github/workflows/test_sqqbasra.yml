@@ -1,0 +1,78 @@
+name: Play-test Sqqbasra in Simulator
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "sqqbasra/**"
+      - ".github/workflows/test_sqqbasra.yml"
+      - ".github/scripts/ascii_screenshot.py"
+
+jobs:
+  playtest:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: sqqbasra
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          brew install xcodegen
+          python3 -m pip install --break-system-packages --quiet pillow || python3 -m pip install --quiet pillow
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Pick and boot an iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)['devices']
+          print(next(x['udid'] for k, v in sorted(d.items(), reverse=True) if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl list devices | grep "$UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID"
+
+      - name: Build Debug for simulator
+        run: |
+          xcodebuild -project Sqqbasra.xcodeproj -scheme Sqqbasra -configuration Debug \
+            -destination "id=$UDID" -derivedDataPath build build | tail -n 30
+
+      - name: Run automated play-test
+        run: |
+          APP=build/Build/Products/Debug-iphonesimulator/Sqqbasra.app
+          BUNDLE=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist")
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch --console-pty "$UDID" "$BUNDLE" -autotest > app.log 2>&1 &
+          for t in 3 8 14 25; do
+            sleep $(( t - ${prev:-0} )); prev=$t
+            xcrun simctl io "$UDID" screenshot "shot_${t}s.png" >/dev/null 2>&1 || true
+          done
+          for i in $(seq 1 160); do
+            grep -q "\[AT\].*END" app.log && break
+            sleep 1
+          done
+          sleep 2
+          echo "================ GAME LOG ================"
+          cat app.log
+          if ! grep -q "\[AT\].*END" app.log; then
+            echo "!!! play-test did not finish (crash or hang)"
+            ls -la ~/Library/Logs/DiagnosticReports/ 2>/dev/null | tail -n 20 || true
+            for f in ~/Library/Logs/DiagnosticReports/Sqqbasra*; do [ -f "$f" ] && head -n 80 "$f"; done
+          fi
+
+      - name: Show screenshots as ASCII
+        if: always()
+        run: python3 ../.github/scripts/ascii_screenshot.py shot_*.png || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sqqbasra-playtest
+          path: |
+            sqqbasra/app.log
+            sqqbasra/shot_*.png
