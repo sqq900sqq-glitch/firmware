@@ -20,3 +20,8 @@ ios/Bruce.xcodeproj/
 ios/build/
 ios/Payload/
 ios/*.ipa
+sqqbasra/Sqqbasra.xcodeproj/
+sqqbasra/build/
+sqqbasra/Payload/
+sqqbasra/*.ipa
+sqqbasra/Sources/Info.plist
