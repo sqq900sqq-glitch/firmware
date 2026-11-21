@@ -572,8 +572,9 @@ extension GameScene {
         let grounded = isGrounded()
         let px = player.position.x
         let footY = player.position.y - player.size.height / 2
+        // A real pit has no ground at all below it (platform edges are not pits).
         let pitAhead = !rayHitsGround(from: CGPoint(x: px + 40, y: footY + 2),
-                                      to: CGPoint(x: px + 40, y: footY - 40))
+                                      to: CGPoint(x: px + 40, y: -60))
         let enemyAhead = enemies.contains { e in
             !e.dead && e.parent != nil && e.position.x > px && e.position.x - px < 110
                 && abs(e.position.y - player.position.y) < 40
