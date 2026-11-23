@@ -1,0 +1,26 @@
+name: Istighfar iOS IPA
+on:
+  push:
+    branches: [ "claude/gracious-faraday-2hjq3e" ]
+    paths: [ "istighfar-ios/App/**", "istighfar-ios/build-ipa.sh", ".github/workflows/istighfar-ios.yml" ]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build IPA
+        run: istighfar-ios/build-ipa.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Istighfar-ipa
+          path: istighfar-ios/dist/Istighfar.ipa
+      - name: Commit IPA back to branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f istighfar-ios/dist/Istighfar.ipa
+          git commit -m "Build Istighfar.ipa [skip ci]" || exit 0
+          git push origin HEAD:${GITHUB_REF_NAME}
